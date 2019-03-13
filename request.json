@@ -1,0 +1,74 @@
+{
+  "request": {
+    "query": {
+      "bool": {
+        "must": [
+          {
+            "query_string": {
+              "analyze_wildcard": true,
+              "query": "orderStatus: COMPLETED"
+            }
+          },
+          {
+            "range": {
+              "orderCreateAt": {
+                "gte": 0,
+                "lte": 1,
+                "format": "epoch_millis"
+              }
+            }
+          }
+        ],
+        "must_not": []
+      }
+    },
+    "size": 0,
+    "_source": {
+      "excludes": []
+    },
+    "aggs": {
+      "6": {
+        "terms": {
+          "field": "pid.keyword",
+          "size": 1000,
+          "order": {
+            "_term": "desc"
+          }
+        },
+        "aggs": {
+          "3": {
+            "terms": {
+              "field": "name.keyword",
+              "size": 1000,
+              "order": {
+                "_term": "desc"
+              }
+            },
+            "aggs": {
+              "5": {
+                "terms": {
+                  "field": "orgName.keyword",
+                  "size": 12,
+                  "order": {
+                    "_count": "desc"
+                  }
+                },
+                "aggs": {
+                  "4": {
+                    "terms": {
+                      "field": "orderItemUnitPrice",
+                      "size": 100,
+                      "order": {
+                        "_term": "desc"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
