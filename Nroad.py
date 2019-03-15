@@ -5,6 +5,7 @@ __author__ = 'vincen'
 
 from flask import Flask, redirect, session, url_for, escape, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
+import datetime
 # from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
 
 ########################################################################
@@ -55,18 +56,70 @@ def dashboard():
     temp = order_service.get_orders()
     return jsonify({'tasks': temp}), 200
 
+@app.route("/v1/yesterday/new", methods=['GET'])
+def new_orders():
+    """
+    new orders in yesterday
+    """
+    order_service = OrderService()
+    temp = order_service.get_new_orders_in_yesterday()
+    return jsonify({'result': temp[0]}), 200
+
+@app.route("/v1/yesterday/top1", methods=['GET'])
+def top1_orders():
+    """
+    top 1 in yesterday
+    """
+    order_service = OrderService()
+    temp = order_service.get_top1_orders_in_yesterday()
+    result = {'school': temp[0], 'count': temp[1]}
+    return jsonify({'result': result}), 200
+
+@app.route("/v1/total/all", methods=['GET'])
+def all_orders():
+    order_service = OrderService()
+    temp = order_service.get_total_orders_count()
+
 
 ########################################################################
 #                               service
 ########################################################################
 class OrderService(object):
+
+    def __init__(self):
+        self.yesterday = Utils().get_yesterday().strftime("%Y-%m-%d")
+    
     def get_orders(self):
         orders = Order.query.all()
         result = []
         for order in orders:
             result.append(order.to_dict())
         return result
-
+    
+    def get_new_orders_in_yesterday(self):
+        
+        # sql = "SELECT sum(t.count) FROM order_generalize t WHERE t.order_time = :order_time"
+        # result = db.session.execute(sql, {"order_time": yesterday}).fetchone()
+        return db.session.query(db.func.sum(Order.count)).filter(Order.order_time == self.yesterday).one()
+        # return result
+    
+    def get_top1_orders_in_yesterday(self):
+        sql = '''
+            SELECT t.school, SUM ( t.count ) 
+            FROM order_generalize t 
+            WHERE t.order_time = :order_time 
+            GROUP BY t.school 
+            HAVING
+                SUM ( t.count ) = (
+                SELECT MAX( r.topcount ) 
+                FROM ( 
+                    SELECT P.school sch, SUM ( P.count ) topcount 
+                    FROM order_generalize P 
+                    WHERE P.order_time = :order_time 
+                    GROUP BY P.school ) r 
+                );
+        '''
+        return db.session.execute(sql, {"order_time": self.yesterday}).fetchone()
 
 ########################################################################
 #                           dao
@@ -99,8 +152,25 @@ class Order(db.Model):
         data = data.strftime('%Y-%m-%d')
         dict["order_time"] = data
         return dict
-    # def __repr__(self):
-    #     return '{"pkid":%s, "pid":%s}' % (self.pkid, self.pid)
+
+
+class Product(db.Model):
+
+    __tablename__ = 'product'
+    
+    pkid = db.Column(db.Integer, primary_key = True)
+    pid = db.Column(db.String(255))
+    product_name = db.Column(db.String(255))
+    school = db.Column(db.String(255))
+    carrier = db.Column(db.String(255))
+    is_boss = db.Column(db.Boolean)
+    percentage = db.Column(db.Float)
+
+    def to_dict(self):
+        dict = self.__dict__
+        if "_sa_instance_state" in dict:
+            del dict["_sa_instance_state"]
+        return dict
 
 
 
@@ -133,6 +203,13 @@ class Order(db.Model):
 
 #             return json.JSONEncoder.default(self, obj)
 #     return AlchemyEncoder
+class Utils(object):
+    def get_yesterday(self):
+        """
+        :return: yesterday，format : 1970-01-01
+        """
+        yesterday = datetime.date.today() - datetime.timedelta(days=1)
+        return yesterday
 
 
 
