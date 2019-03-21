@@ -5,8 +5,9 @@ __author__ = 'vincen'
 
 from flask import Flask, redirect, url_for, escape, request, jsonify, abort
 from flask_sqlalchemy import SQLAlchemy
-import datetime
-from crypt import crypt
+import datetime, base64, json
+from logging.config import dictConfig
+from flask_bcrypt import Bcrypt
 from itsdangerous import (TimedJSONWebSignatureSerializer as Serializer, BadSignature, SignatureExpired)
 
 ########################################################################
@@ -24,41 +25,60 @@ app.config["SQLALCHEMY_DATABASE_URI"] = 'postgresql://cc3:cc3@localhost/cc3'
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 # jsonify serialize chinese word, not original unicode
 app.config["JSON_AS_ASCII"] = False
+# loggin config
+dictConfig({
+    'version': 1,
+    'formatters': {'default': {
+        'format': '[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
+    }},
+    'handlers': {'file': {
+        'class': 'logging.handlers.RotatingFileHandler',
+        'filename': 'nroad.log',
+        'formatter': 'default',
+        'maxBytes': 102400,
+        'backupCount': 3
+    }},
+    'root': {
+        'level': 'INFO',
+        'handlers': ['file']
+    }
+})
 db = SQLAlchemy(app)
-salt = 'wangxing'
+bcrypt = Bcrypt(app)
+log = app.logger
+# salt = 'wangxing'
 
 SCHOOL = {
-        '10704': '西安科技大学',
-        '12712': '西安欧亚学院',
-        '11664': '西安邮电大学',
-        '10716': '陕西中医药大学',
-        '10722': '咸阳师范学院',
-        '10698': '西安交通大学',
-        '10697': '西北大学',
-        '0820' : 0
-    }
+    '10704': '西安科技大学',    '12712': '西安欧亚学院',    '11664': '西安邮电大学',
+    '10698': '西安交通大学',    '10722': '咸阳师范学院',    '10697': '西北大学',
+    '10716': '陕西中医药大学',  '00000': 'all of schools'
+}
 
+# CARRIER = {CTCC: '中国电信',  CMCC: '中国移动',   CUCC: '中国联通',   ALL: '' }
 
 ########################################################################
 #                                   api
 ########################################################################
-@app.route('/v1')
-def index():
-    if 'username' in session:
-        return 'Logged in as %s' % escape(session['username'])
-    return 'You are not Logged in'
+@app.route('/v1/now', methods=['GET'])
+def current_time():
+    now = datetime.datetime()
+    return jsonify({'now': now}), 200
 
-@app.route("/v1/login", methods=['GET', 'POST'])
+@app.route('/v1/login', methods=['POST'])
 def login():
-    if request.method == 'POST':
-        session['username'] = request.form['username']
-        return redirect(url_for('index'))
-    return '''
-        <form method="post">
-            <p><input type=text name=username>
-            <p><input type=submit value=Login>
-        </form>
-    '''
+    secret_iden = request.json.get('iden')
+    origin_iden = base64.urlsafe_b64decode(secret_iden)
+    up = json.loads(origin_iden)
+    up_username = up.get('username').strip()
+    log.info(up_username + ' is sign in')
+    up_password = up.get('password').strip()
+    userService = UserService()
+    user = userService.find_user(up_username)
+    if user.verify_password(up_password):
+        token = user.generate_auth_token()
+        return jsonify({'token': token.decode('ascii')}), 200
+    else:
+        abort_if_none(user, 404, 'User not found')
 
 @app.route('/v1/logout')
 def logout():
@@ -72,28 +92,44 @@ def dashboard():
     return jsonify({'tasks': temp}), 200
 
 @app.route("/v1/users", methods=['POST'])
-def create_user():
+def create_user_api1():
     username = request.json.get('username')
     nickname = request.json.get('nickname')
     password = request.json.get('password')
+
+    userService = UserService()
     if username is None or password is None:
         abort(400)      # missing arguments
-    if User.query.filter_by(username=username).first() is not None:
+    if userService.find_user(username) is not None:
         abort(400)      # existing user
-    user = User(username = username, nickname = nickname)
-    user.hash_password(password)
-    db.session.add(user)
-    db.session.commit()
+    user = userService.create_user(username, nickname, password)
     return (jsonify({'username': user.username}), 201,
-            {'Location': url_for('read_user', pkid=user.pkid, _external=True)})
+            {'Location': url_for('read_user_api1', pkid=user.pkid, _external=True)})
+
+# @app.route("/v1/users", methods=['PUT'])
+# def update_user_api1():
+#     username = request.json.get('username')
+#     password = request.json.get('password')
+#     userService = UserService()
+#     user = userService.update_password(username, password)
+#     return jsonify({'result': 'success'}), 200
 
 @app.route("/v1/users/<int:pkid>", methods=['GET'])
-def read_user(pkid):
+def read_user_api1(pkid):
     user = User.query.get(pkid)
     if not user:
         abort(400)
     return jsonify({'username': user.username, 'nickname': user.nickname})
 
+@app.route("/v1/permissions", methods=['POST'])
+def create_permission_api1():
+    user_id = request.json.get('userid')
+    school_code = request.json.get('schoolcode')
+    carrier = request.json.get('carrier')
+    p = Permission(user_id = user_id, school_code = school_code, carrier = carrier)
+    permissionService = PermissionService()
+    p = permissionService.create_permission(p)
+    return (jsonify({'user_id': p.user_id, 'school': p.school_code, 'carrier': p.carrier}), 201)
 
 @app.route("/v1/yesterday/new", methods=['GET'])
 def new_orders_yesterday_api1():
@@ -129,7 +165,8 @@ def top1_orders_count_api1():
 
 @app.route("/v1/daily/detail", methods=['GET'])
 def daily_detail_count_api1():
-    psss
+    order_service = OrderService()
+    # temp = order_service.get_daily_detail_count()
 
 ########################################################################
 #                               service
@@ -190,15 +227,56 @@ class OrderService(object):
         '''
         return db.session.execute(sql).fetchone()
 
-    def get_daily_detail_count(self):
-        pass
+    def get_daily_detail_count(self, start_date, end_date, school_code):
+        sql = '''
+            SELECT
+                o.order_time,
+                o.school,
+                r.carrier,
+                CAST(SUM ( COUNT * CASE WHEN is_boss THEN percentage ELSE 1 END ) AS INT) AS orders 
+            FROM
+                order_generalize o, product r 
+            WHERE
+                o.pid = r.pid 
+                AND order_time >= :start 
+                AND order_time <= :end
+                AND o.school = :school 
+                AND carrier = :carrier 
+            GROUP BY
+                o.order_time,
+                o.school,
+                r.carrier 
+            ORDER BY
+                o.order_time DESC;
+        '''
+        return db.session.execute(sql, {"start": start_date, "end": end_date, "school": school_code}).fetchall()
 
 
-########################################################################
-#                           dao
-########################################################################
-# class OrderDao(object):
-    # def get
+class UserService(object):
+    def create_user(self, username, nickname, password):
+        user = User(username = username, nickname = nickname)
+        user.hash_password(password)
+        db.session.add(user)
+        db.session.commit()
+        return user
+
+    def find_user(self, username):
+        return User.query.filter_by(username=username).first()
+
+    # def update_password(self, username, password):
+    #     old_user = User.query.filter_by(username = username)
+    #     new_user = User(username = old_user.)
+    #     user.hash_password(password)
+    #     db.session.update(user)
+    #     db.session.commit()
+    #     return user
+
+
+class PermissionService(object):
+    def create_permission(self, permission):
+        db.session.add(permission)
+        db.session.commit()
+        return permission
 
 
 ########################################################################
@@ -255,14 +333,10 @@ class User(db.Model):
     password = db.Column(db.String(255))
 
     def hash_password(self, password):
-        self.password = crypt(password, salt=salt)
+        self.password = bcrypt.generate_password_hash(password).decode('utf-8')
 
     def verify_password(self, password):
-        p2 = crypt(password, salt=salt)
-        if p2 == self.password:
-            return True
-        else:
-            return False
+        return bcrypt.check_password_hash(self.password, password)
     
     def generate_auth_token(self, expiration = 600):
         s = Serializer(app.config['SECRET_KEY'], expires_in = expiration)
@@ -280,7 +354,14 @@ class User(db.Model):
         user = User.query.get(data['pkid'])
         return user
 
-    
+
+class Permission(db.Model):
+    __tablename__ = 'permission'
+
+    pkid = db.Column(db.Integer, primary_key = True)
+    user_id = db.Column(db.Integer)
+    school_code = db.Column(db.String(255))
+    carrier = db.Column(db.String(255))
 
 ########################################################################
 #                                   utils

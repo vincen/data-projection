@@ -57,3 +57,19 @@ ALTER TABLE "public"."product" OWNER TO "cc3";
 -- ----------------------------
 ALTER TABLE "public"."product" ADD CONSTRAINT "product_pkey" PRIMARY KEY ("pkid");
 
+
+-- ----------------------------
+-- Table structure for permission
+-- ----------------------------
+DROP TABLE IF EXISTS "public"."permission";
+CREATE TABLE "public"."permission" (
+  "pkid" serial NOT NULL,
+  "user_id" int4,
+  "school_code" varchar(255),
+  "carrier" varchar(255)
+);
+ALTER TABLE "public"."permission" OWNER TO "cc3";
+-- ----------------------------
+-- Primary Key structure for table permission
+-- ----------------------------
+ALTER TABLE "public"."permission" ADD CONSTRAINT "permission_pkey" PRIMARY KEY ("pkid");
