@@ -127,7 +127,7 @@ class PushData(object):
             database='cc3')
         cur = conn.cursor()
         try:
-            cur.executemany('''INSERT INTO order_generalize (pid, product_name, school, price, count, order_time) VALUES (%(pid)s, %(pn)s, %(school)s, %(price)s, %(count)s, %(order_time)s)''', data)
+            cur.executemany('''INSERT INTO t_order (pid, product_name, school, price, count, order_time) VALUES (%(pid)s, %(pn)s, %(school)s, %(price)s, %(count)s, %(order_time)s)''', data)
             conn.commit()
         except Exception as e:
             print("it's a bug")

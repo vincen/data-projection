@@ -5,7 +5,7 @@ __author__ = 'vincen'
 
 from flask import Flask, redirect, url_for, escape, request, jsonify, abort
 from flask_sqlalchemy import SQLAlchemy
-import datetime, base64, json
+import datetime, base64, json, time
 from logging.config import dictConfig
 from flask_bcrypt import Bcrypt
 from itsdangerous import (TimedJSONWebSignatureSerializer as Serializer, BadSignature, SignatureExpired)
@@ -16,8 +16,6 @@ from itsdangerous import (TimedJSONWebSignatureSerializer as Serializer, BadSign
 app = Flask(__name__)
 # enable debug mode
 app.debug = True
-# flask session needs a secret key
-# app.secret_key = b'_5#y2L"F4Q8z\n\xec]/'
 # a secret key using by token
 app.config['SECRET_KEY'] = 'nroad is a good company'
 # database configuration
@@ -46,22 +44,21 @@ dictConfig({
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 log = app.logger
-# salt = 'wangxing'
 
-SCHOOL = {
-    '10704': '西安科技大学',    '12712': '西安欧亚学院',    '11664': '西安邮电大学',
-    '10698': '西安交通大学',    '10722': '咸阳师范学院',    '10697': '西北大学',
-    '10716': '陕西中医药大学',  '00000': 'all of schools'
-}
+# SCHOOL = {
+#     '10704': '西安科技大学',    '12712': '西安欧亚学院',    '11664': '西安邮电大学',
+#     '10698': '西安交通大学',    '10722': '咸阳师范学院',    '10697': '西北大学',
+#     '10716': '陕西中医药大学',  '00000': 'all of schools'
+# }
 
 # CARRIER = {CTCC: '中国电信',  CMCC: '中国移动',   CUCC: '中国联通',   ALL: '' }
 
 ########################################################################
 #                                   api
 ########################################################################
-@app.route('/v1/now', methods=['GET'])
+@app.route('/now', methods=['GET'])
 def current_time():
-    now = datetime.datetime()
+    now = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     return jsonify({'now': now}), 200
 
 @app.route('/v1/login', methods=['POST'])
@@ -70,7 +67,7 @@ def login():
     origin_iden = base64.urlsafe_b64decode(secret_iden)
     up = json.loads(origin_iden)
     up_username = up.get('username').strip()
-    log.info(up_username + ' is sign in')
+    log.info(up_username + ' signed in')
     up_password = up.get('password').strip()
     userService = UserService()
     user = userService.find_user(up_username)
@@ -133,18 +130,12 @@ def create_permission_api1():
 
 @app.route("/v1/yesterday/new", methods=['GET'])
 def new_orders_yesterday_api1():
-    """
-    new orders in yesterday
-    """
     order_service = OrderService()
     temp = order_service.get_new_orders_in_yesterday()
     return jsonify({'result': temp[0]}), 200
 
 @app.route("/v1/yesterday/top1", methods=['GET'])
 def top1_orders_yesterday_api1():
-    """
-    top 1 in yesterday
-    """
     order_service = OrderService()
     temp = order_service.get_top1_orders_in_yesterday()
     result = {'school': temp[0], 'count': temp[1]}
@@ -283,8 +274,7 @@ class PermissionService(object):
 #                               domain
 ########################################################################
 class Order(db.Model):
-
-    __tablename__ = 'order_generalize'
+    __tablename__ = 't_order'
 
     pkid = db.Column(db.Integer, primary_key = True)
     pid = db.Column(db.String(255))
@@ -306,8 +296,7 @@ class Order(db.Model):
 
 
 class Product(db.Model):
-
-    __tablename__ = 'product'
+    __tablename__ = 't_product'
     
     pkid = db.Column(db.Integer, primary_key = True)
     pid = db.Column(db.String(255))
@@ -325,7 +314,7 @@ class Product(db.Model):
 
 
 class User(db.Model):
-    __tablename__ = 'user'
+    __tablename__ = 't_user'
 
     pkid = db.Column(db.Integer, primary_key = True)
     username = db.Column(db.String(255))
@@ -356,7 +345,7 @@ class User(db.Model):
 
 
 class Permission(db.Model):
-    __tablename__ = 'permission'
+    __tablename__ = 't_permission'
 
     pkid = db.Column(db.Integer, primary_key = True)
     user_id = db.Column(db.Integer)
