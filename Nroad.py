@@ -45,14 +45,6 @@ db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 log = app.logger
 
-# SCHOOL = {
-#     '10704': '西安科技大学',    '12712': '西安欧亚学院',    '11664': '西安邮电大学',
-#     '10698': '西安交通大学',    '10722': '咸阳师范学院',    '10697': '西北大学',
-#     '10716': '陕西中医药大学',  '00000': 'all of schools'
-# }
-
-# CARRIER = {CTCC: '中国电信',  CMCC: '中国移动',   CUCC: '中国联通',   ALL: '' }
-
 ########################################################################
 #                                   api
 ########################################################################
@@ -154,6 +146,13 @@ def top1_orders_count_api1():
     result = {'school': temp[0], 'count': temp[1]}
     return jsonify({'result': result}), 200
 
+@app.route("/v1/data/overview", methods=['GET'])
+def get_data_overview_api1():
+    order_service = OrderService()
+    result = order_service.get_data_overview()
+    return jsonify({'result': result}), 200
+
+
 @app.route("/v1/daily/detail", methods=['GET'])
 def daily_detail_count_api1():
     order_service = OrderService()
@@ -163,9 +162,6 @@ def daily_detail_count_api1():
 #                               service
 ########################################################################
 class OrderService(object):
-
-    def __init__(self):
-        self.yesterday = Utils().get_yesterday().strftime("%Y-%m-%d")
     
     def get_orders(self):
         orders = Order.query.all()
@@ -173,50 +169,6 @@ class OrderService(object):
         for order in orders:
             result.append(order.to_dict())
         return result
-    
-    def get_new_orders_in_yesterday(self):
-        
-        # sql = "SELECT sum(t.count) FROM order_generalize t WHERE t.order_time = :order_time"
-        # result = db.session.execute(sql, {"order_time": yesterday}).fetchone()
-        return db.session.query(db.func.sum(Order.count)).filter(Order.order_time == self.yesterday).one()
-        # return result
-    
-    def get_top1_orders_in_yesterday(self):
-        sql = '''
-            SELECT t.school, SUM ( t.count ) 
-            FROM order_generalize t 
-            WHERE t.order_time = :order_time 
-            GROUP BY t.school 
-            HAVING
-                SUM ( t.count ) = (
-                SELECT MAX( r.topcount ) 
-                FROM ( 
-                    SELECT P.school sch, SUM ( P.count ) topcount 
-                    FROM order_generalize P 
-                    WHERE P.order_time = :order_time 
-                    GROUP BY P.school ) r 
-                );
-        '''
-        return db.session.execute(sql, {"order_time": self.yesterday}).fetchone()
-
-    def get_total_orders_count(self):
-        return db.session.query(db.func.sum(Order.count)).one()
-    
-    def get_top1_orders_count(self):
-        sql = '''
-            SELECT t.school, SUM ( t.count ) 
-            FROM order_generalize t 
-            GROUP BY t.school 
-            HAVING
-                SUM ( t.count ) = (
-                SELECT MAX( r.topcount ) 
-                FROM ( 
-                    SELECT P.school sch, SUM ( P.count ) topcount 
-                    FROM order_generalize P 
-                    GROUP BY P.school ) r 
-                );
-        '''
-        return db.session.execute(sql).fetchone()
 
     def get_daily_detail_count(self, start_date, end_date, school_code):
         sql = '''
@@ -241,6 +193,28 @@ class OrderService(object):
                 o.order_time DESC;
         '''
         return db.session.execute(sql, {"start": start_date, "end": end_date, "school": school_code}).fetchall()
+
+    def get_data_overview(self):
+        order_dao = OrderDao()
+        temp1 = order_dao.get_new_orders_in_yesterday()
+        new_orders_in_yesterday = temp1[0]
+        log.info(temp1)
+        temp2 = order_dao.get_top1_orders_in_yesterday()
+        log.info(temp2)
+        top1_orders_in_yesterday = {'school': temp2[0], 'count': temp2[1]}
+        temp3 = order_dao.get_total_orders_count()
+        total_orders_count = temp3[0]
+        log.info(temp3)
+        temp4 = order_dao.get_top1_orders_count()
+        top1_orders_count = {'school': temp4[0], 'count': temp4[1]}
+        log.info(temp4)
+        result = {"new_orders_in_yesterday": new_orders_in_yesterday, 
+                  "top1_orders_in_yesterday": top1_orders_in_yesterday,
+                  "total_orders_count": total_orders_count,
+                  "top1_orders_count": top1_orders_count
+        }
+        return result
+
 
 
 class UserService(object):
@@ -268,6 +242,75 @@ class PermissionService(object):
         db.session.add(permission)
         db.session.commit()
         return permission
+
+
+########################################################################
+#                                dao
+########################################################################
+class OrderDao(object):
+    def __init__(self):
+        self.yesterday = Utils().get_yesterday().strftime("%Y-%m-%d")
+
+    def get_new_orders_in_yesterday(self):
+        sql = "SELECT sum(t.orders) FROM v_order t WHERE t.order_time = :order_time"
+        return db.session.execute(sql, {"order_time": self.yesterday}).fetchone()
+
+    def get_top1_orders_in_yesterday(self):
+        sql = '''
+            SELECT t.school, SUM ( t.orders ) 
+            FROM v_order t 
+            WHERE t.order_time = :order_time 
+            GROUP BY t.school 
+            HAVING
+                SUM ( t.orders ) = (
+                SELECT MAX( r.topcount ) 
+                FROM ( 
+                    SELECT P.school sch, SUM ( P.orders ) topcount 
+                    FROM v_order P 
+                    WHERE P.order_time = :order_time 
+                    GROUP BY P.school ) r 
+                );
+        '''
+        return db.session.execute(sql, {"order_time": self.yesterday}).fetchone()
+
+        # results = None
+        # connection = db.engine.raw_connection()
+        # try:
+        #     cursor = connection.cursor()
+        #     cursor.callproc("top1_orders_in_yesterday", [self.yesterday])
+        #     results = list(cursor.fetchall())
+        #     cursor.close()
+        #     connection.commit()
+        # finally:
+        #     connection.close()
+        # return resutls
+
+        # resutls = db.session.execute("SELECT top1_orders_in_yesterday('2019-03-20')").fetchall()
+        # log.info(results)
+        # return results
+
+
+    def get_total_orders_count(self):
+        sql = "SELECT sum(t.orders) FROM v_order t"
+        return db.session.execute(sql).fetchone()
+
+    def get_top1_orders_count(self):
+        sql = '''
+            SELECT t.school, SUM ( t.orders ) 
+            FROM v_order t 
+            GROUP BY t.school 
+            HAVING
+                SUM ( t.orders ) = (
+                SELECT MAX( r.topcount ) 
+                FROM ( 
+                    SELECT P.school sch, SUM ( P.orders ) topcount 
+                    FROM v_order P 
+                    GROUP BY P.school ) r 
+                );
+        '''
+        return db.session.execute(sql).fetchone()
+
+
 
 
 ########################################################################
