@@ -120,43 +120,17 @@ def create_permission_api1():
     p = permissionService.create_permission(p)
     return (jsonify({'user_id': p.user_id, 'school': p.school_code, 'carrier': p.carrier}), 201)
 
-@app.route("/v1/yesterday/new", methods=['GET'])
-def new_orders_yesterday_api1():
-    order_service = OrderService()
-    temp = order_service.get_new_orders_in_yesterday()
-    return jsonify({'result': temp[0]}), 200
-
-@app.route("/v1/yesterday/top1", methods=['GET'])
-def top1_orders_yesterday_api1():
-    order_service = OrderService()
-    temp = order_service.get_top1_orders_in_yesterday()
-    result = {'school': temp[0], 'count': temp[1]}
-    return jsonify({'result': result}), 200
-
-@app.route("/v1/total/all", methods=['GET'])
-def all_orders_count_api1():
-    order_service = OrderService()
-    temp = order_service.get_total_orders_count()
-    return jsonify({'result': temp[0]}), 200
-
-@app.route("/v1/total/top1", methods=['GET'])
-def top1_orders_count_api1():
-    order_service = OrderService()
-    temp = order_service.get_top1_orders_count()
-    result = {'school': temp[0], 'count': temp[1]}
-    return jsonify({'result': result}), 200
-
 @app.route("/v1/data/overview", methods=['GET'])
 def get_data_overview_api1():
     order_service = OrderService()
     result = order_service.get_data_overview()
     return jsonify({'result': result}), 200
 
-
-@app.route("/v1/daily/detail", methods=['GET'])
+@app.route("/v1/data/statistic", methods=['GET'])
 def daily_detail_count_api1():
     order_service = OrderService()
-    # temp = order_service.get_daily_detail_count()
+    result = order_service.get_data_statistic()
+    return jsonify({'result': result}), 200
 
 ########################################################################
 #                               service
@@ -170,25 +144,18 @@ class OrderService(object):
             result.append(order.to_dict())
         return result
 
-    def get_daily_detail_count(self, start_date, end_date, school_code):
+    def get_data_statistic(self, start_date, end_date, school_code):
         sql = '''
-            SELECT
-                o.order_time,
-                o.school,
-                r.carrier,
-                CAST(SUM ( COUNT * CASE WHEN is_boss THEN percentage ELSE 1 END ) AS INT) AS orders 
-            FROM
-                order_generalize o, product r 
+            SELECT o.order_time, o.school, SUM ( o.orders ) total 
+            FROM v_order o
             WHERE
-                o.pid = r.pid 
-                AND order_time >= :start 
-                AND order_time <= :end
+                o.order_time >= :start 
+                AND o.order_time <= :end
                 AND o.school = :school 
                 AND carrier = :carrier 
             GROUP BY
                 o.order_time,
-                o.school,
-                r.carrier 
+                o.school
             ORDER BY
                 o.order_time DESC;
         '''
@@ -214,7 +181,6 @@ class OrderService(object):
                   "top1_orders_count": top1_orders_count
         }
         return result
-
 
 
 class UserService(object):
@@ -248,6 +214,23 @@ class PermissionService(object):
 #                                dao
 ########################################################################
 class OrderDao(object):
+    SQL_1 = "SELECT sum(t.orders) FROM v_order t "
+    SQL_2 = '''
+            SELECT t.school, SUM ( t.orders ) 
+            FROM v_order t 
+            {param} 
+            GROUP BY t.school 
+            HAVING SUM ( t.orders ) = (
+                SELECT MAX( r.topcount ) 
+                FROM ( 
+                    SELECT P.school sch, SUM ( P.orders ) topcount 
+                    FROM v_order P 
+                    {param}
+                    GROUP BY P.school ) r 
+                );
+        '''
+    CONDITION = "WHERE t.order_time = :order_time "
+
     def __init__(self):
         self.yesterday = Utils().get_yesterday().strftime("%Y-%m-%d")
 
@@ -261,8 +244,7 @@ class OrderDao(object):
             FROM v_order t 
             WHERE t.order_time = :order_time 
             GROUP BY t.school 
-            HAVING
-                SUM ( t.orders ) = (
+            HAVING SUM ( t.orders ) = (
                 SELECT MAX( r.topcount ) 
                 FROM ( 
                     SELECT P.school sch, SUM ( P.orders ) topcount 
@@ -273,23 +255,6 @@ class OrderDao(object):
         '''
         return db.session.execute(sql, {"order_time": self.yesterday}).fetchone()
 
-        # results = None
-        # connection = db.engine.raw_connection()
-        # try:
-        #     cursor = connection.cursor()
-        #     cursor.callproc("top1_orders_in_yesterday", [self.yesterday])
-        #     results = list(cursor.fetchall())
-        #     cursor.close()
-        #     connection.commit()
-        # finally:
-        #     connection.close()
-        # return resutls
-
-        # resutls = db.session.execute("SELECT top1_orders_in_yesterday('2019-03-20')").fetchall()
-        # log.info(results)
-        # return results
-
-
     def get_total_orders_count(self):
         sql = "SELECT sum(t.orders) FROM v_order t"
         return db.session.execute(sql).fetchone()
@@ -299,8 +264,7 @@ class OrderDao(object):
             SELECT t.school, SUM ( t.orders ) 
             FROM v_order t 
             GROUP BY t.school 
-            HAVING
-                SUM ( t.orders ) = (
+            HAVING SUM ( t.orders ) = (
                 SELECT MAX( r.topcount ) 
                 FROM ( 
                     SELECT P.school sch, SUM ( P.orders ) topcount 
@@ -309,8 +273,6 @@ class OrderDao(object):
                 );
         '''
         return db.session.execute(sql).fetchone()
-
-
 
 
 ########################################################################
@@ -395,6 +357,7 @@ class Permission(db.Model):
     school_code = db.Column(db.String(255))
     carrier = db.Column(db.String(255))
 
+
 ########################################################################
 #                                   utils
 ########################################################################
@@ -405,8 +368,6 @@ class Utils(object):
         """
         yesterday = datetime.date.today() - datetime.timedelta(days=1)
         return yesterday
-    
-
 
 
 ########################################################################
