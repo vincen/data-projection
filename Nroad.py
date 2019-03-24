@@ -50,6 +50,7 @@ log = app.logger
 ########################################################################
 @app.route('/now', methods=['GET'])
 def current_time():
+    # user = Auths.verify_auth_token(request)
     now = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     return jsonify({'now': now}), 200
 
@@ -59,12 +60,12 @@ def login():
     origin_iden = base64.urlsafe_b64decode(secret_iden)
     up = json.loads(origin_iden)
     up_username = up.get('username').strip()
-    log.info(up_username + ' signed in')
     up_password = up.get('password').strip()
     userService = UserService()
     user = userService.find_user(up_username)
+    log.info(user.nickname + ' signed in')
     if user.verify_password(up_password):
-        token = user.generate_auth_token()
+        token = Auths.generate_auth_token(user)
         return jsonify({'token': token.decode('ascii')}), 200
     else:
         abort_if_none(user, 404, 'User not found')
@@ -95,14 +96,6 @@ def create_user_api1():
     return (jsonify({'username': user.username}), 201,
             {'Location': url_for('read_user_api1', pkid=user.pkid, _external=True)})
 
-# @app.route("/v1/users", methods=['PUT'])
-# def update_user_api1():
-#     username = request.json.get('username')
-#     password = request.json.get('password')
-#     userService = UserService()
-#     user = userService.update_password(username, password)
-#     return jsonify({'result': 'success'}), 200
-
 @app.route("/v1/users/<int:pkid>", methods=['GET'])
 def read_user_api1(pkid):
     user = User.query.get(pkid)
@@ -127,7 +120,7 @@ def get_data_overview_api1():
     return jsonify({'result': result}), 200
 
 @app.route("/v1/data/statistic", methods=['GET'])
-def daily_detail_count_api1():
+def get_data_statistic_api1():
     order_service = OrderService()
     result = order_service.get_data_statistic()
     return jsonify({'result': result}), 200
@@ -194,14 +187,6 @@ class UserService(object):
     def find_user(self, username):
         return User.query.filter_by(username=username).first()
 
-    # def update_password(self, username, password):
-    #     old_user = User.query.filter_by(username = username)
-    #     new_user = User(username = old_user.)
-    #     user.hash_password(password)
-    #     db.session.update(user)
-    #     db.session.commit()
-    #     return user
-
 
 class PermissionService(object):
     def create_permission(self, permission):
@@ -209,71 +194,43 @@ class PermissionService(object):
         db.session.commit()
         return permission
 
-
 ########################################################################
 #                                dao
 ########################################################################
 class OrderDao(object):
-    SQL_1 = "SELECT sum(t.orders) FROM v_order t "
+    SQL_1 = "SELECT SUM ( orders ) FROM v_order "
     SQL_2 = '''
-            SELECT t.school, SUM ( t.orders ) 
-            FROM v_order t 
+            SELECT t.school, SUM ( t.orders ) FROM v_order t 
             {param} 
             GROUP BY t.school 
             HAVING SUM ( t.orders ) = (
                 SELECT MAX( r.topcount ) 
                 FROM ( 
-                    SELECT P.school sch, SUM ( P.orders ) topcount 
-                    FROM v_order P 
+                    SELECT P.school sch, SUM ( P.orders ) topcount FROM v_order P 
                     {param}
                     GROUP BY P.school ) r 
                 );
         '''
-    CONDITION = "WHERE t.order_time = :order_time "
+    CONDITION = "WHERE order_time = :order_time "
 
     def __init__(self):
         self.yesterday = Utils().get_yesterday().strftime("%Y-%m-%d")
 
     def get_new_orders_in_yesterday(self):
-        sql = "SELECT sum(t.orders) FROM v_order t WHERE t.order_time = :order_time"
+        sql = self.SQL_1 + self.CONDITION
         return db.session.execute(sql, {"order_time": self.yesterday}).fetchone()
 
     def get_top1_orders_in_yesterday(self):
-        sql = '''
-            SELECT t.school, SUM ( t.orders ) 
-            FROM v_order t 
-            WHERE t.order_time = :order_time 
-            GROUP BY t.school 
-            HAVING SUM ( t.orders ) = (
-                SELECT MAX( r.topcount ) 
-                FROM ( 
-                    SELECT P.school sch, SUM ( P.orders ) topcount 
-                    FROM v_order P 
-                    WHERE P.order_time = :order_time 
-                    GROUP BY P.school ) r 
-                );
-        '''
+        sql = self.SQL_2.format(param=self.CONDITION)
         return db.session.execute(sql, {"order_time": self.yesterday}).fetchone()
 
     def get_total_orders_count(self):
-        sql = "SELECT sum(t.orders) FROM v_order t"
+        sql = self.SQL_1
         return db.session.execute(sql).fetchone()
 
     def get_top1_orders_count(self):
-        sql = '''
-            SELECT t.school, SUM ( t.orders ) 
-            FROM v_order t 
-            GROUP BY t.school 
-            HAVING SUM ( t.orders ) = (
-                SELECT MAX( r.topcount ) 
-                FROM ( 
-                    SELECT P.school sch, SUM ( P.orders ) topcount 
-                    FROM v_order P 
-                    GROUP BY P.school ) r 
-                );
-        '''
+        sql = self.SQL_2.format(param="")
         return db.session.execute(sql).fetchone()
-
 
 ########################################################################
 #                               domain
@@ -331,22 +288,6 @@ class User(db.Model):
 
     def verify_password(self, password):
         return bcrypt.check_password_hash(self.password, password)
-    
-    def generate_auth_token(self, expiration = 600):
-        s = Serializer(app.config['SECRET_KEY'], expires_in = expiration)
-        return s.dumps({'pkid': self.pkid})
-    
-    @staticmethod
-    def verify_auth_token(token):
-        s = Serializer(app.config['SECRET_KEY'])
-        try:
-            data = s.loads(token)
-        except SignatureExpired:
-            return None     # token expired
-        except BadSignature:
-            return None     # invalid token
-        user = User.query.get(data['pkid'])
-        return user
 
 
 class Permission(db.Model):
@@ -356,7 +297,6 @@ class Permission(db.Model):
     user_id = db.Column(db.Integer)
     school_code = db.Column(db.String(255))
     carrier = db.Column(db.String(255))
-
 
 ########################################################################
 #                                   utils
@@ -369,6 +309,31 @@ class Utils(object):
         yesterday = datetime.date.today() - datetime.timedelta(days=1)
         return yesterday
 
+########################################################################
+#                                   utils
+########################################################################
+class Auths(object):
+    @staticmethod
+    def generate_auth_token(user, expiration = 600):
+        log.info(user)
+        s = Serializer(app.config['SECRET_KEY'], expires_in = expiration)
+        return s.dumps({'pkid': user.pkid})
+    
+    @staticmethod
+    def verify_auth_token(request):
+        token = request.headers.get('Authorization')
+        log.info(token)
+        s = Serializer(app.config['SECRET_KEY'])
+        try:
+            data = s.loads(token)
+            log.info(data)
+        except SignatureExpired:
+            return None     # token expired
+        except BadSignature:
+            return None     # invalid token
+        user = User.query.get(data['pkid'])
+        log.info(user)
+        return user
 
 ########################################################################
 #                             Test Running
