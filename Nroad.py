@@ -14,17 +14,13 @@ from itsdangerous import (TimedJSONWebSignatureSerializer as Serializer, BadSign
 #                           global varialbe
 ########################################################################
 app = Flask(__name__)
-# enable debug mode
-app.debug = True
-# a secret key using by token
-app.config['SECRET_KEY'] = 'nroad is a good company'
+app.debug = True                # enable debug mode
+app.config['SECRET_KEY'] = 'nroad is a good company'        # a secret key using by token
 # database configuration
 app.config["SQLALCHEMY_DATABASE_URI"] = 'postgresql://cc3:cc3@localhost/cc3'
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-# jsonify serialize chinese word, not original unicode
-app.config["JSON_AS_ASCII"] = False
-# loggin config
-dictConfig({
+app.config["JSON_AS_ASCII"] = False        # jsonify serialize chinese word, not original unicode
+dictConfig({                        # loggin config
     'version': 1,
     'formatters': {'default': {
         'format': '[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
@@ -45,14 +41,18 @@ db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 log = app.logger
 
+SCHOOL = {
+    '10704': '西安科技大学',    '12712': '西安欧亚学院',    '11664': '西安邮电大学',
+    '10698': '西安交通大学',    '10722': '咸阳师范学院',    '10716': '陕西中医药大学',
+    '10697': '西北大学',        '00000': 'ALL'
+}
 ########################################################################
 #                                   api
 ########################################################################
 @app.route('/now', methods=['GET'])
 def current_time():
-    # user = Auths.verify_auth_token(request)
-    now = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    return jsonify({'now': now}), 200
+    _now = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    return jsonify({'now': _now}), 200
 
 @app.route('/v1/login', methods=['POST'])
 def login():
@@ -86,7 +86,6 @@ def create_user_api1():
     username = request.json.get('username')
     nickname = request.json.get('nickname')
     password = request.json.get('password')
-
     userService = UserService()
     if username is None or password is None:
         abort(400)      # missing arguments
@@ -100,7 +99,7 @@ def create_user_api1():
 def read_user_api1(pkid):
     user = User.query.get(pkid)
     if not user:
-        abort(400)
+        abort(404)
     return jsonify({'username': user.username, 'nickname': user.nickname})
 
 @app.route("/v1/permissions", methods=['POST'])
@@ -113,17 +112,37 @@ def create_permission_api1():
     p = permissionService.create_permission(p)
     return (jsonify({'user_id': p.user_id, 'school': p.school_code, 'carrier': p.carrier}), 201)
 
+@app.route("/v1/permissions", methods=['GET'])
+def read_permissions_api1():
+    user = Auths.verify_auth_token(request)
+    if user is not None:
+        permission_service = PermissionService()
+        temp = permission_service.get_permission(user.pkid)
+        return jsonify({'result': temp, 'school': SCHOOL}), 200
+    else:
+        return abort(401, 'unauthorized')
+
 @app.route("/v1/data/overview", methods=['GET'])
 def get_data_overview_api1():
     order_service = OrderService()
     result = order_service.get_data_overview()
     return jsonify({'result': result}), 200
 
-@app.route("/v1/data/statistic", methods=['GET'])
-def get_data_statistic_api1():
-    order_service = OrderService()
-    result = order_service.get_data_statistic()
-    return jsonify({'result': result}), 200
+@app.route("/v1/data/statistic/<string:code>/<string:carr>", methods=['GET'])
+def get_data_statistic_api1(code, carr):
+    user = Auths.verify_auth_token(request)         # check token
+    if user is not None:
+        start = request.args.get("start")
+        end = request.args.get("end")
+        order_service = OrderService()
+        if Auths.check_permission(user.pkid, code, carr):
+            result = order_service.get_data_statistic(start, end, code, carr)
+            log.info(result)
+            return jsonify({'result': result}), 200
+        else:
+            abort(403, 'forbidden')
+    else:
+        abort(401, 'unauthorized')
 
 ########################################################################
 #                               service
@@ -137,37 +156,31 @@ class OrderService(object):
             result.append(order.to_dict())
         return result
 
-    def get_data_statistic(self, start_date, end_date, school_code):
-        sql = '''
-            SELECT o.order_time, o.school, SUM ( o.orders ) total 
-            FROM v_order o
-            WHERE
-                o.order_time >= :start 
-                AND o.order_time <= :end
-                AND o.school = :school 
-                AND carrier = :carrier 
-            GROUP BY
-                o.order_time,
-                o.school
-            ORDER BY
-                o.order_time DESC;
-        '''
-        return db.session.execute(sql, {"start": start_date, "end": end_date, "school": school_code}).fetchall()
+    def get_data_statistic(self, start, end, code, carrier):
+        params = {"start": start, "end": end}
+        _param = ''
+        if code != '00000':
+            _param = 'AND o.school = :school '
+            params["school"] = SCHOOL.get(code)
+        if carrier != 'ALL':
+            _param += 'AND carrier = :carrier '
+            params["carrier"] = carrier
+        order_dao = OrderDao()
+        result = order_dao.get_data_statistic(params, _param)
+        return result
+        
+
 
     def get_data_overview(self):
         order_dao = OrderDao()
         temp1 = order_dao.get_new_orders_in_yesterday()
         new_orders_in_yesterday = temp1[0]
-        log.info(temp1)
         temp2 = order_dao.get_top1_orders_in_yesterday()
-        log.info(temp2)
         top1_orders_in_yesterday = {'school': temp2[0], 'count': temp2[1]}
         temp3 = order_dao.get_total_orders_count()
         total_orders_count = temp3[0]
-        log.info(temp3)
         temp4 = order_dao.get_top1_orders_count()
         top1_orders_count = {'school': temp4[0], 'count': temp4[1]}
-        log.info(temp4)
         result = {"new_orders_in_yesterday": new_orders_in_yesterday, 
                   "top1_orders_in_yesterday": top1_orders_in_yesterday,
                   "total_orders_count": total_orders_count,
@@ -193,6 +206,13 @@ class PermissionService(object):
         db.session.add(permission)
         db.session.commit()
         return permission
+    
+    def get_permission(self, userid):
+        permissions = Permission.query.filter_by(user_id = userid).all()
+        result = []
+        for perm in permissions:
+            result.append(perm.to_dict())
+        return result
 
 ########################################################################
 #                                dao
@@ -212,6 +232,19 @@ class OrderDao(object):
                 );
         '''
     CONDITION = "WHERE order_time = :order_time "
+    SQL_3 = '''
+            SELECT CAST(o.order_time AS varchar), o.school, SUM ( o.orders ) total 
+            FROM v_order o
+            WHERE
+                o.order_time >= :start 
+                AND o.order_time <= :end 
+                {param}
+            GROUP BY
+                o.order_time,
+                o.school
+            ORDER BY
+                o.order_time DESC;
+        '''
 
     def __init__(self):
         self.yesterday = Utils().get_yesterday().strftime("%Y-%m-%d")
@@ -232,6 +265,10 @@ class OrderDao(object):
         sql = self.SQL_2.format(param="")
         return db.session.execute(sql).fetchone()
 
+    def get_data_statistic(self, params, cond):
+        sql = self.SQL_3.format(param=cond)
+        return db.session.execute(sql, params).fetchall()
+
 ########################################################################
 #                               domain
 ########################################################################
@@ -250,10 +287,8 @@ class Order(db.Model):
         dict = self.__dict__
         if "_sa_instance_state" in dict:
             del dict["_sa_instance_state"]
-        
         data = dict.get("order_time")
-        data = data.strftime('%Y-%m-%d')
-        dict["order_time"] = data
+        dict["order_time"] = data.strftime('%Y-%m-%d')
         return dict
 
 
@@ -298,6 +333,20 @@ class Permission(db.Model):
     school_code = db.Column(db.String(255))
     carrier = db.Column(db.String(255))
 
+    def to_dict(self):
+        dict = self.__dict__
+        if "_sa_instance_state" in dict:
+            del dict["_sa_instance_state"]
+        data = dict.get("school_code")
+        dict["school"] = SCHOOL.get(data)
+        return dict
+
+########################################################################
+#                               vo
+########################################################################
+class OrderVO(object):
+    
+
 ########################################################################
 #                                   utils
 ########################################################################
@@ -322,18 +371,23 @@ class Auths(object):
     @staticmethod
     def verify_auth_token(request):
         token = request.headers.get('Authorization')
-        log.info(token)
         s = Serializer(app.config['SECRET_KEY'])
         try:
             data = s.loads(token)
-            log.info(data)
         except SignatureExpired:
             return None     # token expired
         except BadSignature:
             return None     # invalid token
         user = User.query.get(data['pkid'])
-        log.info(user)
         return user
+    
+    @staticmethod
+    def check_permission(userid, code, carrier):
+        perms = Permission.query.filter_by(user_id = userid, school_code = code, carrier = carrier).all()
+        if len(perms) >= 1:
+            return True
+        else:
+            return False
 
 ########################################################################
 #                             Test Running
