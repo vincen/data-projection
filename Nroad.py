@@ -17,7 +17,6 @@ from itsdangerous import (TimedJSONWebSignatureSerializer as Serializer, BadSign
 app = Flask(__name__)
 app.debug = True                # enable debug mode
 app.config['SECRET_KEY'] = 'nroad is a good company'        # a secret key using by token
-# database configuration
 app.config["SQLALCHEMY_DATABASE_URI"] = 'postgresql://cc3:cc3@localhost/cc3'
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["JSON_AS_ASCII"] = False        # jsonify serialize chinese word, not original unicode
@@ -73,48 +72,6 @@ def login():
     else:
         abort_if_none(user, 404, 'User not found')
 
-@app.route('/v1/logout')
-def logout():
-    session.pop('username', None)
-    return redirect(url_for('index'))
-
-@app.route("/v1/dashboard")
-def dashboard():
-    order_service = OrderService()
-    temp = order_service.get_orders()
-    return jsonify({'tasks': temp}), 200
-
-@app.route("/v1/users", methods=['POST'])
-def create_user_api1():
-    username = request.json.get('username')
-    nickname = request.json.get('nickname')
-    password = request.json.get('password')
-    userService = UserService()
-    if username is None or password is None:
-        abort(400)      # missing arguments
-    if userService.find_user(username) is not None:
-        abort(400)      # existing user
-    user = userService.create_user(username, nickname, password)
-    return (jsonify({'username': user.username}), 201,
-            {'Location': url_for('read_user_api1', pkid=user.pkid, _external=True)})
-
-@app.route("/v1/users/<int:pkid>", methods=['GET'])
-def read_user_api1(pkid):
-    user = User.query.get(pkid)
-    if not user:
-        abort(404)
-    return jsonify({'username': user.username, 'nickname': user.nickname})
-
-@app.route("/v1/permissions", methods=['POST'])
-def create_permission_api1():
-    user_id = request.json.get('userid')
-    school_code = request.json.get('schoolcode')
-    carrier = request.json.get('carrier')
-    p = Permission(user_id = user_id, school_code = school_code, carrier = carrier)
-    permissionService = PermissionService()
-    p = permissionService.create_permission(p)
-    return (jsonify({'user_id': p.user_id, 'school': p.school_code, 'carrier': p.carrier}), 201)
-
 @app.route("/v1/permissions", methods=['GET'])
 def read_permissions_api1():
     user = Auths.verify_auth_token(request)
@@ -162,20 +119,6 @@ class OrderService(object):
     def get_data_statistic(self, start, end, code, carrier):
         order_dao = OrderDao()
         temps = order_dao.get_data_statistic(start, end, code, carrier)
-        # result = list()
-        # for t in temp:
-        #     result.append(TOrder(*t).to_dict())
-        # return result
-
-        # result = dict()
-        # for temp in temps:
-        #     torder = TOrder(*temp)
-        #     value = result.get(torder.order_time)
-        #     val = torder.school + ": " + str(torder.orders) + ", "
-        #     value = val if value is None else value + val
-        #     result[torder.order_time] = value
-        # return result
-
         result = dict()
         for temp in temps:
             torder = TOrder(*temp)
@@ -188,9 +131,6 @@ class OrderService(object):
                 value[torder.school] = torder.orders
             result[torder.order_time] = value
         return list(result.values())
-
-
-
 
     def get_data_overview(self):
         order_dao = OrderDao()
