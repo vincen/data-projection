@@ -94,3 +94,24 @@ CREATE VIEW "public"."v_order" AS
     o.order_time,
     o.school,
     r.carrier;
+
+
+-- ----------------------------
+-- View structure for v_order_2
+-- ----------------------------
+DROP VIEW IF EXISTS "public"."v_order_2";
+CREATE VIEW "public"."v_order_2" AS
+    SELECT
+      tmp.order_time,
+      tmp.school,
+      tmp.carrier,
+      COALESCE(SUM ( o."count" * CASE WHEN tmp.is_boss THEN tmp.percentage ELSE 1 END ), 0) :: INTEGER AS orders  
+    FROM
+      ( SELECT DAY :: DATE as order_time, t_product.* FROM generate_series ( '2019-02-15', now() - INTERVAL '1 d', INTERVAL '1 d' ) DAY, t_product ) tmp
+    LEFT JOIN t_order o ON tmp.pid = o.pid AND tmp.order_time = o.order_time
+    GROUP BY
+      tmp.order_time,
+      tmp.school,
+      carrier 
+    ORDER BY
+      order_time DESC;

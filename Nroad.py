@@ -8,6 +8,7 @@ from flask_sqlalchemy import SQLAlchemy
 import datetime, base64, json, time
 from logging.config import dictConfig
 from flask_bcrypt import Bcrypt
+from flask_cors import CORS
 from itsdangerous import (TimedJSONWebSignatureSerializer as Serializer, BadSignature, SignatureExpired)
 
 ########################################################################
@@ -56,7 +57,9 @@ def current_time():
 
 @app.route('/v1/login', methods=['POST'])
 def login():
+    log.info(request)
     secret_iden = request.json.get('iden')
+    log.info(secret_iden)
     origin_iden = base64.urlsafe_b64decode(secret_iden)
     up = json.loads(origin_iden)
     up_username = up.get('username').strip()
@@ -157,18 +160,36 @@ class OrderService(object):
         return result
 
     def get_data_statistic(self, start, end, code, carrier):
-        params = {"start": start, "end": end}
-        _param = ''
-        if code != '00000':
-            _param = 'AND o.school = :school '
-            params["school"] = SCHOOL.get(code)
-        if carrier != 'ALL':
-            _param += 'AND carrier = :carrier '
-            params["carrier"] = carrier
         order_dao = OrderDao()
-        result = order_dao.get_data_statistic(params, _param)
-        return result
-        
+        temps = order_dao.get_data_statistic(start, end, code, carrier)
+        # result = list()
+        # for t in temp:
+        #     result.append(TOrder(*t).to_dict())
+        # return result
+
+        # result = dict()
+        # for temp in temps:
+        #     torder = TOrder(*temp)
+        #     value = result.get(torder.order_time)
+        #     val = torder.school + ": " + str(torder.orders) + ", "
+        #     value = val if value is None else value + val
+        #     result[torder.order_time] = value
+        # return result
+
+        result = dict()
+        for temp in temps:
+            torder = TOrder(*temp)
+            value = result.get(torder.order_time)
+            if value is None:
+                value = dict()
+                value['order_time'] = torder.order_time
+                value[torder.school] = torder.orders
+            else:
+                value[torder.school] = torder.orders
+            result[torder.order_time] = value
+        return list(result.values())
+
+
 
 
     def get_data_overview(self):
@@ -228,22 +249,16 @@ class OrderDao(object):
                 FROM ( 
                     SELECT P.school sch, SUM ( P.orders ) topcount FROM v_order P 
                     {param}
-                    GROUP BY P.school ) r 
-                );
+                    GROUP BY P.school ) r );
         '''
     CONDITION = "WHERE order_time = :order_time "
     SQL_3 = '''
             SELECT CAST(o.order_time AS varchar), o.school, SUM ( o.orders ) total 
-            FROM v_order o
-            WHERE
-                o.order_time >= :start 
-                AND o.order_time <= :end 
+            FROM v_order_2 o
+            WHERE o.order_time >= :start AND o.order_time <= :end 
                 {param}
-            GROUP BY
-                o.order_time,
-                o.school
-            ORDER BY
-                o.order_time DESC;
+            GROUP BY o.order_time, o.school
+            ORDER BY o.order_time DESC;
         '''
 
     def __init__(self):
@@ -265,9 +280,17 @@ class OrderDao(object):
         sql = self.SQL_2.format(param="")
         return db.session.execute(sql).fetchone()
 
-    def get_data_statistic(self, params, cond):
-        sql = self.SQL_3.format(param=cond)
-        return db.session.execute(sql, params).fetchall()
+    def get_data_statistic(self, start, end, code, carrier):
+        _params = {"start": start, "end": end}
+        _cond = ''
+        if code != '00000':
+            _cond = 'AND o.school = :school '
+            _params["school"] = SCHOOL.get(code)
+        if carrier != 'ALL':
+            _cond += 'AND carrier = :carrier '
+            _params["carrier"] = carrier
+        sql = self.SQL_3.format(param=_cond)
+        return db.session.execute(sql, _params).fetchall()
 
 ########################################################################
 #                               domain
@@ -342,10 +365,23 @@ class Permission(db.Model):
         return dict
 
 ########################################################################
-#                               vo
+#                         transfer object
 ########################################################################
-class OrderVO(object):
+class TOrder(object):
+    order_time = None
+    school = None
+    orders = None
+  
+    def __init__(self, order_time, school, orders):
+        self.order_time = order_time
+        self.school = school
+        self.orders = orders
     
+    def to_dict(self):
+        dict = self.__dict__
+        if "_sa_instance_state" in dict:
+            del dict["_sa_instance_state"]
+        return dict
 
 ########################################################################
 #                                   utils
@@ -394,4 +430,6 @@ class Auths(object):
 ########################################################################
 if __name__ == '__main__':
     # entry the application in development environment
-    app.run()
+    # support cors
+    CORS(app, supports_credentials=True)
+    app.run(host='0.0.0.0', port=5000)

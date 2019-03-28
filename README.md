@@ -1,8 +1,14 @@
-# 配置说明
+# 部署配置说明
 
 ## 数据库
 
 见 initdb.sql 。
+
+## 代码环境
+
+```shell
+virtualenv --no-site-packages venv
+```
 
 # 代码说明
 
@@ -131,7 +137,7 @@ Authorization eyJhbGciOiJIUzUxMiIsImlhdCI6MTU1MzQ0Nzc1OSwiZXhwIjoxNTUzNDQ4MzU5fQ
 
 ### 5.1 request method
 
-> /v1/data/statistic			GET
+> /v1/data/statistic/<school>			GET
 
 ### 5.2 request parameters
 
