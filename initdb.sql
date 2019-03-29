@@ -1,4 +1,14 @@
 -- ----------------------------
+-- Create role
+-- Create database
+-- grant privileges
+-- ----------------------------
+create user cc3 with password 'password';
+create database cc3 owner cc3;
+grant all privileges on database cc3 to cc3;
+
+
+-- ----------------------------
 -- Table structure for t_order
 -- ----------------------------
 DROP TABLE IF EXISTS "public"."t_order";
@@ -9,7 +19,7 @@ CREATE TABLE "public"."t_order" (
   "price" numeric(8,2),
   "school" varchar(255),
   "count" int4,
-  "updated_at" timestamp(6) without time zone NOT NULL DEFAULT now(),
+  "updated_at" timestamp(6) with time zone NOT NULL DEFAULT now(),
   "order_time" date
 );
 ALTER TABLE "public"."t_order" OWNER TO "cc3";
@@ -109,6 +119,27 @@ CREATE VIEW "public"."v_order_2" AS
     FROM
       ( SELECT DAY :: DATE as order_time, t_product.* FROM generate_series ( '2019-02-15', now() - INTERVAL '1 d', INTERVAL '1 d' ) DAY, t_product ) tmp
     LEFT JOIN t_order o ON tmp.pid = o.pid AND tmp.order_time = o.order_time
+    GROUP BY
+      tmp.order_time,
+      tmp.school,
+      carrier 
+    ORDER BY
+      order_time DESC;
+
+
+-- ----------------------------
+-- View structure for v_order_3
+-- ----------------------------
+DROP VIEW IF EXISTS "public"."v_order_3";
+CREATE VIEW "public"."v_order_3" AS
+    SELECT
+      tmp.order_time,
+      tmp.school,
+      tmp.carrier,
+      COALESCE(SUM ( o."count" * CASE WHEN tmp.is_boss THEN tmp.percentage ELSE 1 END ), 0) :: INTEGER AS orders  
+    FROM
+      ( SELECT DAY :: DATE as order_time, t_product.* FROM generate_series ( '2019-02-15', now() - INTERVAL '1 d', INTERVAL '1 d' ) DAY, t_product ) tmp
+    LEFT JOIN t_order o ON tmp.pid = o.pid AND o.order_time <= tmp.order_time
     GROUP BY
       tmp.order_time,
       tmp.school,

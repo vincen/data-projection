@@ -57,90 +57,104 @@ def current_time():
 
 @app.route('/v1/login', methods=['POST'])
 def login():
-    log.info(request)
-    secret_iden = request.json.get('iden')
-    log.info(secret_iden)
-    origin_iden = base64.urlsafe_b64decode(secret_iden)
-    up = json.loads(origin_iden)
-    up_username = up.get('username').strip()
-    up_password = up.get('password').strip()
-    userService = UserService()
-    user = userService.find_user(up_username)
-    log.info(user.nickname + ' signed in')
-    if user.verify_password(up_password):
-        token = Auths.generate_auth_token(user)
-        return jsonify({'token': token.decode('ascii')}), 200
+    _secret_iden = request.json.get('iden')
+    _origin_iden = base64.urlsafe_b64decode(_secret_iden)
+    _up = json.loads(_origin_iden)
+    _up_username = _up.get('username').strip()
+    _up_password = _up.get('password').strip()
+    _userService = UserService()
+    _user = _userService.find_user(_up_username)
+    log.info(_user.nickname + ' signed in')
+    if _user.verify_password(_up_password):
+        _token = Auths.generate_auth_token(_user)
+        return jsonify({'token': _token.decode('ascii')}), 200
     else:
-        abort_if_none(user, 404, 'User not found')
-
-@app.route('/v1/logout')
-def logout():
-    session.pop('username', None)
-    return redirect(url_for('index'))
-
-@app.route("/v1/dashboard")
-def dashboard():
-    order_service = OrderService()
-    temp = order_service.get_orders()
-    return jsonify({'tasks': temp}), 200
+        abort_if_none(_user, 404, 'User not found')
 
 @app.route("/v1/users", methods=['POST'])
 def create_user_api1():
-    username = request.json.get('username')
-    nickname = request.json.get('nickname')
-    password = request.json.get('password')
-    userService = UserService()
-    if username is None or password is None:
-        abort(400)      # missing arguments
-    if userService.find_user(username) is not None:
-        abort(400)      # existing user
-    user = userService.create_user(username, nickname, password)
-    return (jsonify({'username': user.username}), 201,
-            {'Location': url_for('read_user_api1', pkid=user.pkid, _external=True)})
+    _current = Auths.verify_auth_token(request)
+    if _current is not None:
+        _username = request.json.get('username')
+        _nickname = request.json.get('nickname')
+        _password = request.json.get('password')
+        _user_service = UserService()
+        if _username is None or _password is None:
+            abort(400, 'missing arguments')
+        if _user_service.find_user(_username) is not None:
+            abort(400, 'existing user')
+        _user = _user_service.create_user(_username, _nickname, _password)
+        return (jsonify({'username': _user.username}), 201,
+                {'Location': url_for('read_user_api1', pkid=_user.pkid, _external=True)})
+    else:
+        return abort(401, 'unauthorized')
 
-@app.route("/v1/users/<int:pkid>", methods=['GET'])
-def read_user_api1(pkid):
-    user = User.query.get(pkid)
-    if not user:
-        abort(404)
-    return jsonify({'username': user.username, 'nickname': user.nickname})
+@app.route("/v1/users", methods=['GET'])
+def read_user_api1():
+    _current = Auths.verify_auth_token(request)
+    if _current is not None:
+        return jsonify({'username': _current.username, 'nickname': _current.nickname})
+    else:
+        abort(401, 'unauthorized')
 
 @app.route("/v1/permissions", methods=['POST'])
 def create_permission_api1():
-    user_id = request.json.get('userid')
-    school_code = request.json.get('schoolcode')
-    carrier = request.json.get('carrier')
-    p = Permission(user_id = user_id, school_code = school_code, carrier = carrier)
-    permissionService = PermissionService()
-    p = permissionService.create_permission(p)
-    return (jsonify({'user_id': p.user_id, 'school': p.school_code, 'carrier': p.carrier}), 201)
+    _current = Auths.verify_auth_token(request)
+    if _current is not None:
+        user_id = request.json.get('userid')
+        school_code = request.json.get('schoolcode')
+        carrier = request.json.get('carrier')
+        p = Permission(user_id = user_id, school_code = school_code, carrier = carrier)
+        permission_service = PermissionService()
+        p = permission_service.create_permission(p)
+        return (jsonify({'user_id': p.user_id, 'school': p.school_code, 'carrier': p.carrier}), 201)
+    else:
+        abort(401, 'unauthorized')
 
 @app.route("/v1/permissions", methods=['GET'])
 def read_permissions_api1():
-    user = Auths.verify_auth_token(request)
-    if user is not None:
+    _current = Auths.verify_auth_token(request)
+    if _current is not None:
         permission_service = PermissionService()
-        temp = permission_service.get_permission(user.pkid)
+        temp = permission_service.get_permission(_current.pkid)
         return jsonify({'result': temp, 'school': SCHOOL}), 200
     else:
         return abort(401, 'unauthorized')
 
 @app.route("/v1/data/overview", methods=['GET'])
 def get_data_overview_api1():
-    order_service = OrderService()
-    result = order_service.get_data_overview()
-    return jsonify({'result': result}), 200
+    _current = Auths.verify_auth_token(request)
+    if _current is not None:
+        order_service = OrderService()
+        result = order_service.get_data_overview()
+        return jsonify({'result': result}), 200
+    else:
+        return abort(401, 'unauthorized')
 
-@app.route("/v1/data/statistic/<string:code>/<string:carr>", methods=['GET'])
-def get_data_statistic_api1(code, carr):
-    user = Auths.verify_auth_token(request)         # check token
-    if user is not None:
+@app.route("/v1/data/statistic/new/<string:code>", methods=['GET'])
+def get_data_statistic_new_api1(code):
+    _current = Auths.verify_auth_token(request)         # check token
+    if _current is not None:
         start = request.args.get("start")
         end = request.args.get("end")
         order_service = OrderService()
-        if Auths.check_permission(user.pkid, code, carr):
-            result = order_service.get_data_statistic(start, end, code, carr)
-            log.info(result)
+        result = order_service.get_data_statistic_new(_current.pkid, start, end, code)
+        if result is not None:
+            return jsonify({'result': result}), 200
+        else:
+            abort(403, 'forbidden')
+    else:
+        abort(401, 'unauthorized')
+
+@app.route("/v1/data/statistic/total/<string:code>", methods=['GET'])
+def get_data_statistic_total_api1(code):
+    _current = Auths.verify_auth_token(request)
+    if _current is not None:
+        start = request.args.get("start")
+        end = request.args.get("end")
+        order_service = OrderService()
+        result = order_service.get_data_statistic_total(_current.pkid, start, end, code)
+        if result is not None:
             return jsonify({'result': result}), 200
         else:
             abort(403, 'forbidden')
@@ -151,46 +165,45 @@ def get_data_statistic_api1(code, carr):
 #                               service
 ########################################################################
 class OrderService(object):
-    
-    def get_orders(self):
-        orders = Order.query.all()
-        result = []
-        for order in orders:
-            result.append(order.to_dict())
-        return result
-
-    def get_data_statistic(self, start, end, code, carrier):
-        order_dao = OrderDao()
-        temps = order_dao.get_data_statistic(start, end, code, carrier)
-        # result = list()
-        # for t in temp:
-        #     result.append(TOrder(*t).to_dict())
-        # return result
-
-        # result = dict()
-        # for temp in temps:
-        #     torder = TOrder(*temp)
-        #     value = result.get(torder.order_time)
-        #     val = torder.school + ": " + str(torder.orders) + ", "
-        #     value = val if value is None else value + val
-        #     result[torder.order_time] = value
-        # return result
-
-        result = dict()
-        for temp in temps:
+    def get_data_statistic_new(self, user_id, start, end, code):
+        _permission_service = PermissionService()
+        _permission = _permission_service.get_permission_by_user_and_school(user_id, code)
+        if _permission is None:
+            return None
+        _order_dao = OrderDao()
+        _temps = _order_dao.get_data_statistic_new(start, end, code, _permission.carrier)
+        _result = dict()
+        for temp in _temps:
             torder = TOrder(*temp)
-            value = result.get(torder.order_time)
+            value = _result.get(torder.order_time)
             if value is None:
                 value = dict()
                 value['order_time'] = torder.order_time
                 value[torder.school] = torder.orders
             else:
                 value[torder.school] = torder.orders
-            result[torder.order_time] = value
-        return list(result.values())
+            _result[torder.order_time] = value
+        return list(_result.values())
 
-
-
+    def get_data_statistic_total(self, user_id, start, end, code):
+        _permission_service = PermissionService()
+        _permission = _permission_service.get_permission_by_user_and_school(user_id, code)
+        if _permission is None:
+            return None
+        _order_dao = OrderDao()
+        _temps = _order_dao.get_data_statistic_total(start, end, code, _permission.carrier)
+        _result = dict()
+        for temp in _temps:
+            torder = TOrder(*temp)
+            value = _result.get(torder.order_time)
+            if value is None:
+                value = dict()
+                value['order_time'] = torder.order_time
+                value[torder.school] = torder.orders
+            else:
+                value[torder.school] = torder.orders
+            _result[torder.order_time] = value
+        return list(_result.values())
 
     def get_data_overview(self):
         order_dao = OrderDao()
@@ -235,6 +248,9 @@ class PermissionService(object):
             result.append(perm.to_dict())
         return result
 
+    def get_permission_by_user_and_school(self, user_id, school_code):
+        return Permission.query.filter_by(user_id = user_id, school_code = school_code).first()
+
 ########################################################################
 #                                dao
 ########################################################################
@@ -260,6 +276,14 @@ class OrderDao(object):
             GROUP BY o.order_time, o.school
             ORDER BY o.order_time DESC;
         '''
+    SQL_4 = '''
+            SELECT CAST(o.order_time AS varchar), o.school, SUM ( o.orders ) total 
+            FROM v_order_3 o
+            WHERE o.order_time >= :start AND o.order_time <= :end 
+                {param}
+            GROUP BY o.order_time, o.school
+            ORDER BY o.order_time DESC;
+        '''
 
     def __init__(self):
         self.yesterday = Utils().get_yesterday().strftime("%Y-%m-%d")
@@ -280,7 +304,7 @@ class OrderDao(object):
         sql = self.SQL_2.format(param="")
         return db.session.execute(sql).fetchone()
 
-    def get_data_statistic(self, start, end, code, carrier):
+    def get_data_statistic_new(self, start, end, code, carrier):
         _params = {"start": start, "end": end}
         _cond = ''
         if code != '00000':
@@ -290,6 +314,18 @@ class OrderDao(object):
             _cond += 'AND carrier = :carrier '
             _params["carrier"] = carrier
         sql = self.SQL_3.format(param=_cond)
+        return db.session.execute(sql, _params).fetchall()
+
+    def get_data_statistic_total(self, start, end, code, carrier):
+        _params = {"start": start, "end": end}
+        _cond = ''
+        if code != '00000':
+            _cond = 'AND o.school = :school '
+            _params["school"] = SCHOOL.get(code)
+        if carrier != 'ALL':
+            _cond += 'AND carrier = :carrier '
+            _params["carrier"] = carrier
+        sql = self.SQL_4.format(param=_cond)
         return db.session.execute(sql, _params).fetchall()
 
 ########################################################################
@@ -407,23 +443,17 @@ class Auths(object):
     @staticmethod
     def verify_auth_token(request):
         token = request.headers.get('Authorization')
+        if token is None:
+            return None
         s = Serializer(app.config['SECRET_KEY'])
         try:
             data = s.loads(token)
         except SignatureExpired:
-            return None     # token expired
+            return None                 # token expired
         except BadSignature:
-            return None     # invalid token
+            return None                 # invalid token
         user = User.query.get(data['pkid'])
         return user
-    
-    @staticmethod
-    def check_permission(userid, code, carrier):
-        perms = Permission.query.filter_by(user_id = userid, school_code = code, carrier = carrier).all()
-        if len(perms) >= 1:
-            return True
-        else:
-            return False
 
 ########################################################################
 #                             Test Running
