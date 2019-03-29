@@ -40,6 +40,7 @@ dictConfig({                        # loggin config
 })
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
+CORS(app, supports_credentials=True)
 log = app.logger
 
 SCHOOL = {
@@ -460,6 +461,4 @@ class Auths(object):
 ########################################################################
 if __name__ == '__main__':
     # entry the application in development environment
-    # support cors
-    CORS(app, supports_credentials=True)
     app.run(host='0.0.0.0', port=5000)
