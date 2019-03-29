@@ -133,11 +133,11 @@ Authorization eyJhbGciOiJIUzUxMiIsImlhdCI6MTU1MzQ0Nzc1OSwiZXhwIjoxNTUzNDQ4MzU5fQ
 }
 ```
 
-## 5 数据统计
+## 5 数据统计（新增）
 
 ### 5.1 request method
 
-> /v1/data/statistic/<school>			GET
+> /v1/data/statistic/new/<school_code>			GET
 
 ### 5.2 request parameters
 
@@ -147,7 +147,17 @@ Authorization eyJhbGciOiJIUzUxMiIsImlhdCI6MTU1MzQ0Nzc1OSwiZXhwIjoxNTUzNDQ4MzU5fQ
 | start       | 2019-02-15 | no       |
 | end         | 2019-03-25 | no       |
 
+## 6 数据统计（累计）
 
+### 6.1 request method
 
-### 5.2 response value
+> /v1/data/statistic/total/<school_code>		GET
+
+### 6.2 request parameters
+
+| parameters  | vlaue      | optional |
+| ----------- | ---------- | -------- |
+| school_code | 10697      | yes      |
+| start       | 2019-02-15 | no       |
+| end         | 2019-03-25 | no       |
 
