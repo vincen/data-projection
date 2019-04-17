@@ -117,7 +117,7 @@ def read_permissions_api1():
     _current = Auths.verify_auth_token(request)
     if _current is not None:
         permission_service = PermissionService()
-        temp = permission_service.get_permission(_current.pkid)
+        temp = permission_service.get_permissions(_current.pkid)
         return jsonify({'result': temp, 'school': SCHOOL}), 200
     else:
         return abort(401, 'unauthorized')
@@ -168,43 +168,49 @@ def get_data_statistic_total_api1(code):
 class OrderService(object):
     def get_data_statistic_new(self, user_id, start, end, code):
         _permission_service = PermissionService()
-        _permission = _permission_service.get_permission_by_user_and_school(user_id, code)
+        _permission = _permission_service.get_permission(user_id)
         if _permission is None:
             return None
-        _order_dao = OrderDao()
-        _temps = _order_dao.get_data_statistic_new(start, end, code, _permission.carrier)
-        _result = dict()
-        for temp in _temps:
-            torder = TOrder(*temp)
-            value = _result.get(torder.order_time)
-            if value is None:
-                value = dict()
-                value['order_time'] = torder.order_time
-                value[torder.school] = torder.orders
-            else:
-                value[torder.school] = torder.orders
-            _result[torder.order_time] = value
-        return list(_result.values())
+        if _permission.school_code == '00000' or _permission.school_code == code:
+            _order_dao = OrderDao()
+            _temps = _order_dao.get_data_statistic_new(start, end, code, _permission.carrier)
+            _result = dict()
+            for temp in _temps:
+                torder = TOrder(*temp)
+                value = _result.get(torder.order_time)
+                if value is None:
+                    value = dict()
+                    value['order_time'] = torder.order_time
+                    value[torder.school] = torder.orders
+                else:
+                    value[torder.school] = torder.orders
+                _result[torder.order_time] = value
+            return list(_result.values())
+        else:
+            return None
 
     def get_data_statistic_total(self, user_id, start, end, code):
         _permission_service = PermissionService()
-        _permission = _permission_service.get_permission_by_user_and_school(user_id, code)
+        _permission = _permission_service.get_permission(user_id)
         if _permission is None:
             return None
-        _order_dao = OrderDao()
-        _temps = _order_dao.get_data_statistic_total(start, end, code, _permission.carrier)
-        _result = dict()
-        for temp in _temps:
-            torder = TOrder(*temp)
-            value = _result.get(torder.order_time)
-            if value is None:
-                value = dict()
-                value['order_time'] = torder.order_time
-                value[torder.school] = torder.orders
-            else:
-                value[torder.school] = torder.orders
-            _result[torder.order_time] = value
-        return list(_result.values())
+        if _permission.school_code == '00000' or _permission.school_code == code:
+            _order_dao = OrderDao()
+            _temps = _order_dao.get_data_statistic_total(start, end, code, _permission.carrier)
+            _result = dict()
+            for temp in _temps:
+                torder = TOrder(*temp)
+                value = _result.get(torder.order_time)
+                if value is None:
+                    value = dict()
+                    value['order_time'] = torder.order_time
+                    value[torder.school] = torder.orders
+                else:
+                    value[torder.school] = torder.orders
+                _result[torder.order_time] = value
+            return list(_result.values())
+        else:
+            return None
 
     def get_data_overview(self):
         order_dao = OrderDao()
@@ -242,12 +248,15 @@ class PermissionService(object):
         db.session.commit()
         return permission
     
-    def get_permission(self, userid):
+    def get_permissions(self, userid):
         permissions = Permission.query.filter_by(user_id = userid).all()
         result = []
         for perm in permissions:
             result.append(perm.to_dict())
         return result
+    
+    def get_permission(self, userid):
+        return Permission.query.filter_by(user_id = userid).first()
 
     def get_permission_by_user_and_school(self, user_id, school_code):
         return Permission.query.filter_by(user_id = user_id, school_code = school_code).first()
@@ -256,15 +265,15 @@ class PermissionService(object):
 #                                dao
 ########################################################################
 class OrderDao(object):
-    SQL_1 = "SELECT SUM ( orders ) FROM v_order "
+    SQL_1 = "SELECT SUM ( orders ) FROM v_order_2 "
     SQL_2 = '''
-            SELECT t.school, SUM ( t.orders ) FROM v_order t 
+            SELECT t.school, SUM ( t.orders ) FROM v_order_2 t 
             {param} 
             GROUP BY t.school 
             HAVING SUM ( t.orders ) = (
                 SELECT MAX( r.topcount ) 
                 FROM ( 
-                    SELECT P.school sch, SUM ( P.orders ) topcount FROM v_order P 
+                    SELECT P.school sch, SUM ( P.orders ) topcount FROM v_order_2 P 
                     {param}
                     GROUP BY P.school ) r );
         '''
@@ -461,4 +470,4 @@ class Auths(object):
 ########################################################################
 if __name__ == '__main__':
     # entry the application in development environment
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='127.0.0.1', port=5000)

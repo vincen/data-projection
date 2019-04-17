@@ -7,7 +7,11 @@
 ## 代码环境
 
 ```shell
-virtualenv --no-site-packages venv
+virtualenv --no-site-packages venv			# set virtual environment
+source venv/bin/activate					# activate virtual environment
+deactivate									# deactivate virtual environment
+pip3 freeze > requirements.txt				# record dependencies
+pip3 install -r requirements.txt			# reload dependencies
 ```
 
 # 代码说明
