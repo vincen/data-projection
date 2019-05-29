@@ -126,7 +126,7 @@ def get_data_overview_api1():
     _current = Auths.verify_auth_token(request)
     if _current is not None:
         order_service = OrderService()
-        result = order_service.get_data_overview()
+        result = order_service.get_data_overview(_current.pkid)
         return jsonify({'result': result}), 200
     else:
         return abort(401, 'unauthorized')
@@ -211,22 +211,26 @@ class OrderService(object):
         else:
             return None
 
-    def get_data_overview(self):
-        order_dao = OrderDao()
-        temp1 = order_dao.get_new_orders_in_yesterday()
-        new_orders_in_yesterday = temp1[0]
-        temp2 = order_dao.get_top1_orders_in_yesterday()
-        top1_orders_in_yesterday = {'school': temp2[0], 'count': temp2[1]}
-        temp3 = order_dao.get_total_orders_count()
-        total_orders_count = temp3[0]
-        temp4 = order_dao.get_top1_orders_count()
-        top1_orders_count = {'school': temp4[0], 'count': temp4[1]}
-        result = {"new_orders_in_yesterday": new_orders_in_yesterday, 
-                  "top1_orders_in_yesterday": top1_orders_in_yesterday,
-                  "total_orders_count": total_orders_count,
-                  "top1_orders_count": top1_orders_count
+    def get_data_overview(self, user_id):
+        _permission_service = PermissionService()
+        _permission = _permission_service.get_permission(user_id)
+        _ps = SCHOOL.get(_permission.school_code)
+        _pc = _permission.carrier
+        _order_dao = OrderDao()
+        _temp1 = _order_dao.get_new_orders_in_yesterday(_ps, _pc)
+        _new_orders_in_yesterday = _temp1[0]
+        _temp2 = _order_dao.get_top1_orders_in_yesterday()
+        _top1_orders_in_yesterday = {'school': _temp2[0], 'count': _temp2[1]}
+        _temp3 = _order_dao.get_total_orders_count(_ps, _pc)
+        _total_orders_count = _temp3[0]
+        _temp4 = _order_dao.get_top1_orders_count()
+        _top1_orders_count = {'school': _temp4[0], 'count': _temp4[1]}
+        _result = {"new_orders_in_yesterday": _new_orders_in_yesterday, 
+                  "top1_orders_in_yesterday": _top1_orders_in_yesterday,
+                  "total_orders_count": _total_orders_count,
+                  "top1_orders_count": _top1_orders_count
         }
-        return result
+        return _result
 
 
 class UserService(object):
@@ -247,7 +251,7 @@ class PermissionService(object):
         db.session.commit()
         return permission
     
-    def get_permission(self, userid):
+    def get_permissions(self, userid):
         permissions = Permission.query.filter_by(user_id = userid).all()
         result = []
         for perm in permissions:
@@ -297,17 +301,17 @@ class OrderDao(object):
     def __init__(self):
         self.yesterday = Utils().get_yesterday().strftime("%Y-%m-%d")
 
-    def get_new_orders_in_yesterday(self):
-        sql = self.SQL_1 + self.CONDITION
-        return db.session.execute(sql, {"order_time": self.yesterday}).fetchone()
+    def get_new_orders_in_yesterday(self, scho, carr):
+        sql = self.SQL_1 + self.CONDITION + "AND school = :school AND carrier = :carrier "
+        return db.session.execute(sql, {"order_time": self.yesterday, "school": scho, "carrier": carr}).fetchone()
 
     def get_top1_orders_in_yesterday(self):
         sql = self.SQL_2.format(param=self.CONDITION)
         return db.session.execute(sql, {"order_time": self.yesterday}).fetchone()
 
-    def get_total_orders_count(self):
-        sql = self.SQL_1
-        return db.session.execute(sql).fetchone()
+    def get_total_orders_count(self, scho, carr):
+        sql = self.SQL_1 + "WHERE school = :school AND carrier = :carrier"
+        return db.session.execute(sql, {"school": scho, "carrier": carr}).fetchone()
 
     def get_top1_orders_count(self):
         sql = self.SQL_2.format(param="")
