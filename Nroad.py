@@ -15,7 +15,6 @@ from itsdangerous import (TimedJSONWebSignatureSerializer as Serializer, BadSign
 #                           global varialbe
 ########################################################################
 app = Flask(__name__)
-app.debug = True                # enable debug mode
 app.config['SECRET_KEY'] = 'nroad is a good company'        # a secret key using by token
 # database configuration
 app.config["SQLALCHEMY_DATABASE_URI"] = 'postgresql://cc3:cc3@localhost/cc3'
@@ -59,7 +58,7 @@ def current_time():
 @app.route('/v1/login', methods=['POST'])
 def login():
     _secret_iden = request.json.get('iden')
-    _origin_iden = base64.urlsafe_b64decode(_secret_iden)
+    _origin_iden = str(base64.urlsafe_b64decode(_secret_iden), encoding='utf-8')
     _up = json.loads(_origin_iden)
     _up_username = _up.get('username').strip()
     _up_password = _up.get('password').strip()
@@ -248,7 +247,7 @@ class PermissionService(object):
         db.session.commit()
         return permission
     
-    def get_permissions(self, userid):
+    def get_permission(self, userid):
         permissions = Permission.query.filter_by(user_id = userid).all()
         result = []
         for perm in permissions:
@@ -468,6 +467,6 @@ class Auths(object):
 ########################################################################
 #                             Test Running
 ########################################################################
-if __name__ == '__main__':
+#if __name__ == '__main__':
     # entry the application in development environment
-    app.run(host='127.0.0.1', port=5000)
+#    app.run(host='0.0.0.0', port=5000)

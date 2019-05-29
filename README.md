@@ -14,6 +14,16 @@ pip3 freeze > requirements.txt				# record dependencies
 pip3 install -r requirements.txt			# reload dependencies
 ```
 
+## development server
+
+```shell
+export FLASK_APP=flaskr
+export FLASK_ENV=development
+flask run
+```
+
+
+
 # 代码说明
 
 ## job.py
